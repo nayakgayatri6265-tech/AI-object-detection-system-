@@ -1,0 +1,475 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Object Detection System</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background: #0b1020;
+    color: white;
+}
+
+header {
+    background: #151d33;
+    padding: 20px;
+    text-align: center;
+    border-bottom: 1px solid #26334f;
+}
+
+header h1 {
+    color: #42d9ff;
+    font-size: 27px;
+}
+
+header p {
+    color: #aab6ce;
+    margin-top: 8px;
+}
+
+.container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 25px;
+}
+
+.dashboard {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+}
+
+.panel {
+    background: #151d33;
+    border: 1px solid #26334f;
+    border-radius: 15px;
+    padding: 20px;
+}
+
+h2 {
+    color: #42d9ff;
+    margin-bottom: 15px;
+    font-size: 20px;
+}
+
+.screen {
+    position: relative;
+    width: 100%;
+    background: black;
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 250px;
+}
+
+video, #imagePreview {
+    display: none;
+    width: 100%;
+    height: auto;
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.placeholder {
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8c9bb8;
+    text-align: center;
+}
+
+.buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+button, .upload {
+    padding: 12px 17px;
+    border: none;
+    border-radius: 8px;
+    background: #087cdb;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+button:hover, .upload:hover {
+    background: #06a8ce;
+}
+
+.stop {
+    background: #e04455;
+}
+
+input[type="file"] {
+    display: none;
+}
+
+.status {
+    color: #aab6ce;
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+.stats {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.stat {
+    background: #202c48;
+    padding: 15px;
+    border-radius: 10px;
+    flex: 1;
+}
+
+.stat h3 {
+    font-size: 25px;
+    color: #42d9ff;
+}
+
+.stat p {
+    font-size: 12px;
+    color: #aab6ce;
+    margin-top: 5px;
+}
+
+.object-list {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.object {
+    background: #202c48;
+    padding: 13px;
+    margin-bottom: 10px;
+    border-radius: 9px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.object span:last-child {
+    color: #42d9ff;
+}
+
+footer {
+    text-align: center;
+    color: #8290aa;
+    padding: 25px;
+}
+
+@media(max-width: 750px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>🤖 AI Object Detection System</h1>
+    <p>Smart Artificial Intelligence Object Recognition</p>
+</header>
+
+<div class="container">
+
+<div class="dashboard">
+
+<div class="panel">
+    <h2>📷 Detection Camera</h2>
+
+    <div class="screen" id="screen">
+        <div class="placeholder" id="placeholder">
+            <div>
+                <h2>AI Camera Ready</h2>
+                <p>Start camera or upload an image</p>
+            </div>
+        </div>
+
+        <video id="video" autoplay playsinline muted></video>
+        <img id="imagePreview" alt="Uploaded image">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="buttons">
+        <button onclick="startCamera()">▶ Start Camera</button>
+        <button class="stop" onclick="stopCamera()">■ Stop Camera</button>
+
+        <label class="upload">
+            📁 Upload Image
+            <input type="file" id="fileInput" accept="image/*">
+        </label>
+    </div>
+
+    <p class="status" id="status">Loading AI model...</p>
+</div>
+
+<div class="panel">
+    <h2>📊 Detection Results</h2>
+
+    <div class="stats">
+        <div class="stat">
+            <h3 id="total">0</h3>
+            <p>Objects Found</p>
+        </div>
+
+        <div class="stat">
+            <h3 id="unique">0</h3>
+            <p>Object Types</p>
+        </div>
+    </div>
+
+    <h2>Detected Objects</h2>
+
+    <div class="object-list" id="objectList">
+        <p class="status">No objects detected yet.</p>
+    </div>
+</div>
+
+</div>
+</div>
+
+<footer>
+    AI Object Detection System | Powered by TensorFlow.js
+</footer>
+
+<script>
+const video = document.getElementById("video");
+const image = document.getElementById("imagePreview");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const statusText = document.getElementById("status");
+const placeholder = document.getElementById("placeholder");
+const fileInput = document.getElementById("fileInput");
+
+let model = null;
+let stream = null;
+let running = false;
+let mode = "none";
+
+async function loadModel() {
+    try {
+        statusText.innerText = "Loading AI model...";
+
+        model = await cocoSsd.load();
+
+        statusText.innerText = "✅ AI Model Ready!";
+
+    } catch(error) {
+        statusText.innerText =
+            "Model loading failed. Check your internet connection.";
+        console.error(error);
+    }
+}
+
+function resizeCanvas(source) {
+    canvas.width = source.naturalWidth || source.videoWidth;
+    canvas.height = source.naturalHeight || source.videoHeight;
+}
+
+function drawResults(predictions) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    predictions.forEach(prediction => {
+        const [x, y, width, height] = prediction.bbox;
+
+        ctx.strokeStyle = "#00ff99";
+        ctx.lineWidth = Math.max(2, canvas.width / 300);
+        ctx.strokeRect(x, y, width, height);
+
+        const label =
+            prediction.class + " " +
+            (prediction.score * 100).toFixed(1) + "%";
+
+        ctx.font = "bold 16px Arial";
+
+        const textWidth = ctx.measureText(label).width;
+
+        ctx.fillStyle = "#00a878";
+        ctx.fillRect(
+            x,
+            Math.max(0, y - 25),
+            textWidth + 12,
+            25
+        );
+
+        ctx.fillStyle = "white";
+        ctx.fillText(label, x + 6, Math.max(18, y - 7));
+    });
+
+    updateResults(predictions);
+}
+
+function updateResults(predictions) {
+    document.getElementById("total").innerText =
+        predictions.length;
+
+    const types = [...new Set(
+        predictions.map(item => item.class)
+    )];
+
+    document.getElementById("unique").innerText =
+        types.length;
+
+    const list = document.getElementById("objectList");
+
+    if (predictions.length === 0) {
+        list.innerHTML =
+            '<p class="status">No objects detected.</p>';
+        return;
+    }
+
+    list.innerHTML = predictions.map(item => `
+        <div class="object">
+            <span>🔍 ${item.class}</span>
+            <span>${(item.score * 100).toFixed(1)}%</span>
+        </div>
+    `).join("");
+}
+
+async function detectFrame() {
+    if (!running || !model || mode !== "camera") return;
+
+    if (video.readyState >= 2) {
+        const predictions = await model.detect(video);
+        drawResults(predictions);
+    }
+
+    if (running) {
+        requestAnimationFrame(detectFrame);
+    }
+}
+
+async function startCamera() {
+    if (!model) {
+        statusText.innerText = "Please wait for AI model to load.";
+        return;
+    }
+
+    stopCamera();
+
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" },
+            audio: false
+        });
+
+        video.srcObject = stream;
+        await video.play();
+
+        mode = "camera";
+        running = true;
+
+        video.style.display = "block";
+        image.style.display = "none";
+        placeholder.style.display = "none";
+
+        resizeCanvas(video);
+
+        statusText.innerText = "🟢 Camera running. Detecting objects...";
+
+        detectFrame();
+
+    } catch(error) {
+        statusText.innerText =
+            "Camera access failed. Allow camera permission and use localhost or HTTPS.";
+
+        console.error(error);
+    }
+}
+
+function stopCamera() {
+    running = false;
+
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+    }
+
+    video.pause();
+    video.srcObject = null;
+
+    if (mode === "camera") {
+        video.style.display = "none";
+        canvas.width = 0;
+        canvas.height = 0;
+        placeholder.style.display = "flex";
+    }
+
+    mode = "none";
+    statusText.innerText = "Camera stopped.";
+}
+
+fileInput.addEventListener("change", function(event) {
+    const file = event.target.files[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+        statusText.innerText = "Please select a valid image.";
+        return;
+    }
+
+    stopCamera();
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        image.onload = async function() {
+            mode = "image";
+
+            video.style.display = "none";
+            image.style.display = "block";
+            placeholder.style.display = "none";
+
+            resizeCanvas(image);
+
+            statusText.innerText = "Analyzing image...";
+
+            const predictions = await model.detect(image);
+
+            drawResults(predictions);
+
+            statusText.innerText =
+                "✅ Image detection completed!";
+        };
+
+        image.src = e.target.result;
+    };
+
+    reader.readAsDataURL(file);
+    fileInput.value = "";
+});
+
+loadModel();
+</script>
+
+</body>
+</html>
